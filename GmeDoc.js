@@ -56,7 +56,7 @@ define([
             {
                 name: 'DocTypeName',
                 displayName: 'Documentation model type',
-                description: 'Short readable add-on name; spaces are allowed',
+                description: 'Please specify the meta model type name of the Documentation node.',
                 value: 'Documentation',
                 valueType: 'string',
                 readOnly: false
@@ -78,7 +78,7 @@ define([
         // These are all instantiated at this point.
 
         //TODO: special characters.
-
+        //TODO: parents information ;
 
         var self = this,
             nodeObject;
@@ -97,7 +97,7 @@ define([
 
         // Using the coreAPI to make changes.
         nodeObject = self.activeNode;
-        var specialChar='{}&$%#_'
+        var specialChar='&$%#_'
         var RootFCO;
         var rootFolder=self.rootNode;
         self.core.loadSubTree(rootFolder, function (err, nodeList) {
@@ -122,27 +122,72 @@ define([
             var LatexStart='\\documentclass{article}\n\\usepackage[T1]{fontenc}\n\\begin{document}\n'
             var LatexEnd;
             LatexEnd='\\end{document}';
-            function test(originString) {
-                                  var resultString='';
-                                 for (var k =0; k<originString.length; k++) {
-                                   if(specialChar.indexOf(originString[k])!=-1) {
-                                      resultString+='\\'+originString[k];
-                                   }
-                                   else {
-                                    resultString+=originString[k];
-                                   }
-
-                                 }
-                                 return resultString;
-                              }
+            function regReplace(originString) {
+              var boldreg = /\*\*(\w+)\*\*/;
+              var italicReg=/\*(\w+)\*/;
+              var headReg=/^#/;
+              var headReg2=/^##/;
+              var newstr='';
+              if(boldreg.test(originString))
+              {
+                originString = originString.replace(boldreg, '\\textbf{$1}');
+              }
+              if(italicReg.test(originString))
+              {
+                originString = originString.replace(italicReg, '\\textit{$1}');
+              }
+              if(headReg2.test(originString))
+              {
+                originString = originString.replace(headReg2, '\\subsection*{');
+                originString+='}';
+              }
+              else if(headReg.test(originString))
+              {
+                originString = originString.replace(headReg, '\\section*{');
+                originString+='}';
+              }
+              for (var k =0; k<originString.length; k++) {
+                if(specialChar.indexOf(originString[k])!=-1) {
+                  newstr+='\\'+originString[k];
+                }
+                else {
+                  newstr+=originString[k];
+                }
+              }
+              return newstr;
+            }
+            function lineSplit(originString) {
+              var linebrReg=/\<br\>/;
+              var resultString='';
+              var boldreg = /\*\*(\w+)\*\*/;
+              var stringArray=[];
+              if(linebrReg.test(originString))
+              {
+                stringArray=originString.split(linebrReg);
+              }
+              else
+              {
+                stringArray[0]=originString;
+              }
+              for( var k=0; k<stringArray.length; k++)
+              {
+                resultString+=regReplace(stringArray[k]);
+                if(resultString.charAt(resultString.length-1)!='}'&&k<stringArray.length-1)
+                {
+                  resultString+='\n\n';
+                }
+              }
+              return resultString; 
+            }
             function lamda(currentNode, level) {
               var childrenPaths = self.core.getChildrenPaths(currentNode); 
               var tempDoc=''; 
               var containDoc=false;
+              var subChild=[];
               for (var j = 0; j<childrenPaths.length; j++) {
                   var childNode=nodes[childrenPaths[j]];
                   if (self.isMetaTypeOf(childNode, self.META[self.currentConfig.DocTypeName])
-                    &&childrenPaths[j]!=docMetaPath) {
+                    &&docMetaPath!=self.core.getPath(childNode)) {
                         var docAtt=self.core.getAttributeNames(childNode)
                         var docString='';
                         if(!containDoc) {
@@ -157,14 +202,19 @@ define([
                         for(var k=0; k<docAtt.length; k++)
                         {   if(docAtt[k]!='name') {
                               var originString=self.core.getAttribute(childNode, docAtt[k]);
-                              docString+=test(originString);
+                              docString+=lineSplit(originString);
 
                             }
                         }
                         self.logger.error(docString);
-                        tempDoc+='\\item '+docString+'\n';
+                        tempDoc+='\\item '+self.core.getAttribute(currentNode, 'name')+'\n\n'+docString+'\n';
                   }
-                  tempDoc+=lamda(childNode, level+1);
+                  else {
+                      subChild.push(childNode);
+                  }
+                 }
+                 for(var j=0; j<subChild.length; j++) {
+                    tempDoc+=lamda(subChild[j], level+1);
                  }
                 if(containDoc) {
                         if(level<2) {
@@ -178,6 +228,8 @@ define([
               return tempDoc;
             }
             LatexStart+=lamda(rootFolder, 0);
+            LatexStart=LatexStart.replace(/\n\n(\w)/g, '\\\\$1');
+            LatexStart=LatexStart.replace(/\n\n(\W)/g, '$1');
             var dataStr = LatexStart+LatexEnd;
             self.logger.info(dataStr);
             //self.result.setSuccess(true);
