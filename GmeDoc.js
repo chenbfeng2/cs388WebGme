@@ -77,9 +77,8 @@ define([
         // Use self to access core, project, result, logger etc from PluginBase.
         // These are all instantiated at this point.
 
-        //TODO: special characters.
-        //TODO: parents information ;
-
+        //TODO: more markdown special characters.
+        //TODO: maximum level required for tree
         var self = this,
             nodeObject;
         self.currentConfig = self.getCurrentConfig();
@@ -119,14 +118,20 @@ define([
             };
             var docMetaPath=self.core.getPath(self.META[self.currentConfig.DocTypeName]);
 
-            var LatexStart='\\documentclass{article}\n\\usepackage[T1]{fontenc}\n\\begin{document}\n'
+            var LatexStart='\\documentclass{article}\n\\usepackage[T1]{fontenc}\n\\usepackage{hyperref}\n\\begin{document}\n'
             var LatexEnd;
             LatexEnd='\\end{document}';
             function regReplace(originString) {
-              var boldreg = /\*\*(\w+)\*\*/;
-              var italicReg=/\*(\w+)\*/;
+              var boldreg = /\*\*(.+)\*\*/;
+              var italicReg=/\*(.+)\*/;
               var headReg=/^#/;
               var headReg2=/^##/;
+              var urlAddReg=/\[(.+)\]\(((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?)\)/;
+              var urlReg=/([^\@])((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?)/;
+              var emailReg=/(([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6}))/;
+              var lineReg1=/---/;
+              var lineReg2=/\*\*\*/;
+              var lineReg3=/___/;
               var newstr='';
               if(boldreg.test(originString))
               {
@@ -146,6 +151,19 @@ define([
                 originString = originString.replace(headReg, '\\section*{');
                 originString+='}';
               }
+              if(lineReg1.test(originString)) {
+                originString = originString.replace(lineReg1, '\\rule{\\textwidth}{1pt}')
+              }
+              if(urlAddReg.test(originString))
+              {
+                originString = originString.replace(urlAddReg, '\\href{$2}{$1}');
+              }
+              else if(emailReg.test(originString)) {
+                originString = originString.replace(emailReg, '\\href{mailto:$1}{$1}');
+              }
+              else if(urlReg.test(originString)) {
+                originString = originString.replace(urlReg, '\\href{$2}');
+              }
               for (var k =0; k<originString.length; k++) {
                 if(specialChar.indexOf(originString[k])!=-1) {
                   newstr+='\\'+originString[k];
@@ -156,14 +174,40 @@ define([
               }
               return newstr;
             }
+            function codeGene(originString) {
+              var linebrReg=/<br>/g;
+              var specialChar='&$%#_{}';
+              var newstr='';
+              originString=originString.replace(linebrReg, '\n\n');
+              for (var k =0; k<originString.length; k++) {
+                if(specialChar.indexOf(originString[k])!=-1) {
+                  newstr+='\\'+originString[k];
+                }
+                else {
+                  newstr+=originString[k];
+                }
+              }
+              return newstr;
+
+            }
+
             function lineSplit(originString) {
-              var linebrReg=/\<br\>/;
+              var linebrReg=/<br>/;
               var resultString='';
               var boldreg = /\*\*(\w+)\*\*/;
+              var codeBlk=/(.*)```(.+)```(.*)/;
+
               var stringArray=[];
+              if(codeBlk.test(originString)) {
+                var match=codeBlk.exec(originString);
+                resultString+=lineSplit(match[1])+'\n\n{\\fontfamily{cmss}\\selectfont\n';
+                resultString+=codeGene(match[2])+'\}';
+                resultString+=lineSplit(match[3]);
+              }
+              else {
               if(linebrReg.test(originString))
               {
-                stringArray=originString.split(linebrReg);
+                stringArray=originString.split('\<br\>');
               }
               else
               {
@@ -171,12 +215,14 @@ define([
               }
               for( var k=0; k<stringArray.length; k++)
               {
+                self.logger.error(stringArray[k]);
                 resultString+=regReplace(stringArray[k]);
                 if(resultString.charAt(resultString.length-1)!='}'&&k<stringArray.length-1)
                 {
                   resultString+='\n\n';
                 }
               }
+            }
               return resultString; 
             }
             function lamda(currentNode, level) {
@@ -206,7 +252,6 @@ define([
 
                             }
                         }
-                        self.logger.error(docString);
                         tempDoc+='\\item '+self.core.getAttribute(currentNode, 'name')+'\n\n'+docString+'\n';
                   }
                   else {
@@ -228,8 +273,8 @@ define([
               return tempDoc;
             }
             LatexStart+=lamda(rootFolder, 0);
-            LatexStart=LatexStart.replace(/\n\n(\w)/g, '\\\\$1');
-            LatexStart=LatexStart.replace(/\n\n(\W)/g, '$1');
+            LatexStart=LatexStart.replace(/\n\n([^\\])/g, '\\\\$1');
+            //LatexStart=LatexStart.replace(/\n\n(\W)/g, '$1');
             var dataStr = LatexStart+LatexEnd;
             self.logger.info(dataStr);
             //self.result.setSuccess(true);
